@@ -84,8 +84,9 @@ describe('JobsService.enqueue', () => {
       idempotencyKey: 'idem-1',
     });
     expect(second).toEqual({ jobId: 'job_first1', deduped: true });
-    // Lost-race rollback: second job was added but immediately removed.
-    expect(removeCalls).toContain('job_secnd1');
+    // Claim-first ordering: loser never enqueued, so nothing to remove.
+    expect(removeCalls).not.toContain('job_secnd1');
+    expect(addCalls.map((c) => c.jobId)).toEqual(['job_first1']);
     await svc.close();
     await closeAllRedis();
   });

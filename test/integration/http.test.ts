@@ -1,12 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type * as PdfModule from '@/services/pdf/index.js';
+import type * as SsrfModule from '@/security/ssrf.js';
 
 vi.mock('@/services/pdf/index.js', async () => {
-  const actual = await vi.importActual<typeof import('@/services/pdf/index.js')>(
-    '@/services/pdf/index.js',
-  );
-  const { assertSafeUrl } = await vi.importActual<typeof import('@/security/ssrf.js')>(
-    '@/security/ssrf.js',
-  );
+  const actual = await vi.importActual<typeof PdfModule>('@/services/pdf/index.js');
+  const { assertSafeUrl } = await vi.importActual<typeof SsrfModule>('@/security/ssrf.js');
   class FakeBrowserPool {
     async start(): Promise<void> {}
     async stop(): Promise<void> {}

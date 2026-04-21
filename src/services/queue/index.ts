@@ -81,11 +81,11 @@ export class JobsService {
    * Returns either {jobId, deduped:false} for a brand-new job, or
    * {jobId, deduped:true} when the idempotency key already maps to one.
    *
-   * Ordering: enqueue first, then claim. On a lost SETNX race we soft-cancel
-   * our newly-added job (BullMQ jobIds are unique by construction so we can't
-   * collide with the winner). On a *crashed* claim, the orphaned Redis entry
-   * times out after the TTL — better than the inverse failure mode (claim
-   * present, job never enqueued) which would have client polling forever.
+   * Ordering: claim first, then enqueue. If the process crashes after claim
+   * but before enqueue, the claim TTLs out and the worst case is the client
+   * seeing 404 on GET /v1/jobs/:id — a defined signal. The reverse order
+   * (enqueue then claim) silently duplicates renders when the crash lands
+   * between the two ops, which defeats the whole idempotency promise.
    */
   async enqueue(
     jobId: string,
@@ -96,16 +96,23 @@ export class JobsService {
       const hash = idempotencyHash(data.apiKeyId, data.idempotencyKey, data.request);
       const redisKey = `idem:${hash}`;
       const ttl = 24 * 3600;
-      await this.queue.add('convert', data, opts);
-      const set = await this.redis.set(redisKey, jobId, 'EX', ttl, 'NX');
+      let set = await this.redis.set(redisKey, jobId, 'EX', ttl, 'NX');
       if (set !== 'OK') {
         const existing = await this.redis.get(redisKey);
-        if (existing && existing !== jobId) {
-          await this.queue
-            .remove(jobId)
-            .catch(() => {});
-          return { jobId: existing, deduped: true };
+        if (existing) return { jobId: existing, deduped: true };
+        // SET failed but GET is empty: prior claim expired between the two
+        // ops. Retry once — by definition no claim exists now.
+        set = await this.redis.set(redisKey, jobId, 'EX', ttl, 'NX');
+        if (set !== 'OK') {
+          const retryExisting = await this.redis.get(redisKey);
+          if (retryExisting) return { jobId: retryExisting, deduped: true };
         }
+      }
+      try {
+        await this.queue.add('convert', data, opts);
+      } catch (err) {
+        await this.redis.del(redisKey).catch(() => {});
+        throw err;
       }
       return { jobId, deduped: false };
     }

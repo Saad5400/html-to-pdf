@@ -5,7 +5,7 @@ import type { Config } from '@/config/index.js';
 import { assertContentSize, assertHtmlSize, assertPageCount, LimitExceededError } from '@/security/limits.js';
 import { assertSafeUrl, SsrfError } from '@/security/ssrf.js';
 import type { ConvertOptions, ConvertRequest, RenderResult } from '@/types/index.js';
-import { BrowserPool } from './browser-pool.js';
+import type { BrowserPool } from './browser-pool.js';
 import { buildPdfOptions } from './options.js';
 
 export class RenderError extends Error {
@@ -153,18 +153,19 @@ export class PdfRenderer {
       // Wall-clock guard: closes the page (which rejects in-flight ops) when
       // the budget runs out. This is the *only* reliable kill switch for an
       // infinite-loop script — page.pdf itself takes no AbortSignal.
-      let timedOut = false;
-      const fireBudget = (): Promise<never> =>
-        new Promise<never>((_, reject) => {
-          const t = setTimeout(() => {
-            timedOut = true;
+      const withBudget = <T>(work: Promise<T>): Promise<T> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const budget = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
             page!.close({ runBeforeUnload: false }).catch(() => {});
             reject(new RenderTimeoutError());
           }, remaining());
-          t.unref?.();
+          timer.unref?.();
         });
-      const withBudget = <T>(work: Promise<T>): Promise<T> =>
-        Promise.race([work, fireBudget()]);
+        return Promise.race([work, budget]).finally(() => {
+          if (timer) clearTimeout(timer);
+        });
+      };
 
       if (req.url) {
         await withBudget(
@@ -225,8 +226,6 @@ export class PdfRenderer {
 
       const pdfBuffer = await withBudget(page.pdf(buildPdfOptions(opts)));
 
-      if (timedOut) throw new RenderTimeoutError();
-
       assertContentSize(pdfBuffer.byteLength, this.config.MAX_CONTENT_BYTES);
       const pages = countPdfPages(pdfBuffer);
       assertPageCount(pages, this.config.MAX_PAGES_PER_DOC);
@@ -238,14 +237,17 @@ export class PdfRenderer {
         durationMs: Date.now() - start,
       };
     } catch (err) {
-      needsDiscard = true;
       if (
         err instanceof SsrfError ||
         err instanceof LimitExceededError ||
         err instanceof RenderError
       ) {
+        // Known/expected error classes. Context is safe to reuse — cookies
+        // and permissions are cleared on release, and the page we were on is
+        // torn down in finally. Avoids pool churn under burst of bad input.
         throw err;
       }
+      needsDiscard = true;
       const message = err instanceof Error ? err.message : 'Render failed';
       throw new RenderError(message, err);
     } finally {

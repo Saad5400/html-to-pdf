@@ -109,7 +109,7 @@ export async function assertSafeUrl(input: string, policy: SsrfPolicy): Promise<
     try {
       const records = await dns.lookup(host, { all: true, verbatim: true });
       addresses = records.map((r) => r.address);
-    } catch (e) {
+    } catch {
       throw new SsrfError(`DNS resolution failed for ${host}`);
     }
   }

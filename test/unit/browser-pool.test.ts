@@ -51,7 +51,7 @@ describe('BrowserPool', () => {
 
   it('throws PoolBackpressureError past maxQueueDepth', async () => {
     const pool = new BrowserPool({ size: 1, idleTtlMs: 60_000, maxQueueDepth: 1, logger });
-    const _busy = await pool.checkout();
+    await pool.checkout();
     const queued = pool.checkout();
     queued.catch(() => {});
     await expect(pool.checkout()).rejects.toThrow(PoolBackpressureError);
@@ -60,7 +60,7 @@ describe('BrowserPool', () => {
 
   it('rejects pending waiters on stop()', async () => {
     const pool = new BrowserPool({ size: 1, idleTtlMs: 60_000, maxQueueDepth: 4, logger });
-    const _busy = await pool.checkout();
+    await pool.checkout();
     const waiter = pool.checkout();
     await pool.stop();
     await expect(waiter).rejects.toThrow(PoolStoppedError);

@@ -9,12 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '@/config/index.js';
 import { LimitExceededError } from '@/security/limits.js';
 import { SsrfError } from '@/security/ssrf.js';
-import {
-  BrowserPool,
-  PdfRenderer,
-  RenderError,
-  RenderTimeoutError,
-} from '@/services/pdf/index.js';
+import { BrowserPool, PdfRenderer, RenderError } from '@/services/pdf/index.js';
 
 const logger = pino({ level: 'silent' });
 
