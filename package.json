@@ -1,11 +1,46 @@
 {
-  "name": "html-to-pdf",
+  "name": "@saad5400/html-to-pdf",
   "version": "0.1.0",
-  "description": "Production-grade HTML/URL to PDF conversion service",
-  "private": true,
+  "description": "Production-grade HTML/URL to PDF conversion service and CLI — Fastify + Playwright + BullMQ",
   "type": "module",
+  "license": "MIT",
+  "author": "Saad5400 <saad@sb.sa>",
+  "homepage": "https://github.com/Saad5400/html-to-pdf#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Saad5400/html-to-pdf.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Saad5400/html-to-pdf/issues"
+  },
+  "keywords": [
+    "html",
+    "pdf",
+    "html-to-pdf",
+    "url-to-pdf",
+    "playwright",
+    "chromium",
+    "fastify",
+    "bullmq",
+    "pdf-cli",
+    "render",
+    "headless"
+  ],
   "engines": {
     "node": ">=22.0.0"
+  },
+  "bin": {
+    "htp": "dist/cli/htp.js"
+  },
+  "main": "dist/server.js",
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md",
+    ".env.example"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
@@ -14,7 +49,7 @@
     "dev": "tsx watch src/server.ts",
     "dev:worker": "tsx watch src/worker/index.ts",
     "minimal": "MODE=minimal AUTH_REQUIRED=false tsx src/server.ts",
-    "cli": "tsx bin/htp.ts",
+    "cli": "tsx src/cli/htp.ts",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint:fix": "eslint --fix \"src/**/*.ts\" \"test/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -27,7 +62,8 @@
     "loadtest": "tsx scripts/loadtest.ts",
     "visual": "tsx scripts/visual-render.ts",
     "local": "bash scripts/local.sh",
-    "prepare": "playwright install --with-deps chromium || true"
+    "prepare": "playwright install --with-deps chromium || true",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.654.0",

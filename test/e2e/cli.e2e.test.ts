@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 const exec = promisify(execFile);
 const REPO = path.resolve(__dirname, '..', '..');
 
-describe('CLI: bin/htp (e2e — uses Chromium)', () => {
+describe('CLI: src/cli/htp.ts (e2e — uses Chromium)', () => {
   let tmp: string;
 
   beforeEach(async () => {
@@ -22,7 +22,7 @@ describe('CLI: bin/htp (e2e — uses Chromium)', () => {
     const out = path.join(tmp, 'a.pdf');
     const { stderr } = await exec(
       'npx',
-      ['tsx', 'bin/htp.ts', '--quiet', '--html', '<h1>CLI</h1>', '--out', out],
+      ['tsx', 'src/cli/htp.ts', '--quiet', '--html', '<h1>CLI</h1>', '--out', out],
       { cwd: REPO },
     );
     expect(stderr).toBe('');
@@ -34,7 +34,7 @@ describe('CLI: bin/htp (e2e — uses Chromium)', () => {
   it('reads HTML from stdin and writes JSON metadata when --json', async () => {
     const child = exec(
       'npx',
-      ['tsx', 'bin/htp.ts', '--quiet', '--json'],
+      ['tsx', 'src/cli/htp.ts', '--quiet', '--json'],
       { cwd: REPO, maxBuffer: 8 * 1024 * 1024 },
     );
     child.child.stdin?.write('<h1>From stdin</h1>');
@@ -52,7 +52,7 @@ describe('CLI: bin/htp (e2e — uses Chromium)', () => {
     try {
       await exec(
         'npx',
-        ['tsx', 'bin/htp.ts', '--quiet', '--url', 'https://example.com', '--html', '<p/>'],
+        ['tsx', 'src/cli/htp.ts', '--quiet', '--url', 'https://example.com', '--html', '<p/>'],
         { cwd: REPO },
       );
     } catch (err) {
@@ -69,7 +69,7 @@ describe('CLI: bin/htp (e2e — uses Chromium)', () => {
     try {
       await exec(
         'npx',
-        ['tsx', 'bin/htp.ts', '--quiet', '--url', 'http://127.0.0.1:1/'],
+        ['tsx', 'src/cli/htp.ts', '--quiet', '--url', 'http://127.0.0.1:1/'],
         { cwd: REPO },
       );
     } catch (err) {

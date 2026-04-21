@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * htp — single-shot HTML/URL → PDF CLI.
  *
@@ -11,9 +12,9 @@
  */
 import { promises as fs } from 'node:fs';
 import { pino } from 'pino';
-import { loadConfig } from '../src/config/index.js';
-import { BrowserPool, PdfRenderer } from '../src/services/pdf/index.js';
-import type { ConvertOptions, ConvertRequest } from '../src/types/index.js';
+import { loadConfig } from '../config/index.js';
+import { BrowserPool, PdfRenderer } from '../services/pdf/index.js';
+import type { ConvertOptions, ConvertRequest } from '../types/index.js';
 
 interface CliArgs {
   url?: string;

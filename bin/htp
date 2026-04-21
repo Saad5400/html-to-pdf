@@ -2,4 +2,4 @@
 # Wrapper that runs the TypeScript CLI via tsx (no build step needed).
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE/.."
-exec npx --no-install tsx "bin/htp.ts" "$@"
+exec npx --no-install tsx "src/cli/htp.ts" "$@"

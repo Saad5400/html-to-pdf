@@ -1,7 +1,8 @@
-# html-to-pdf
+# @saad5400/html-to-pdf
 
 ## ⚠️ FULLY VIBE CODDED ⚠️
 
+[![npm version](https://img.shields.io/npm/v/@saad5400/html-to-pdf.svg)](https://www.npmjs.com/package/@saad5400/html-to-pdf)
 [![CI](https://github.com/Saad5400/html-to-pdf/actions/workflows/ci.yml/badge.svg)](https://github.com/Saad5400/html-to-pdf/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./.nvmrc)
@@ -10,9 +11,11 @@ Convert **HTML strings** or **URLs** to **PDF**. A hardened, Chromium-backed ser
 
 Built on **Fastify 5**, **Playwright (Chromium)**, **BullMQ**, and strict TypeScript.
 
+- [Install](#install)
 - [Quick start](#quick-start)
 - [Run modes](#run-modes)
 - [Usage](#usage)
+- [CLI reference](#cli-reference)
 - [API reference](#api-reference)
 - [Render options](#render-options)
 - [Configuration](#configuration)
@@ -25,22 +28,46 @@ Built on **Fastify 5**, **Playwright (Chromium)**, **BullMQ**, and strict TypeSc
 
 ---
 
-## Quick start
+## Install
 
-Requires **Node.js ≥ 22** (see `.nvmrc`). `npm install` also downloads Chromium via Playwright.
+Requires **Node.js ≥ 22**.
+
+### From npm (CLI)
+
+```bash
+npm install -g @saad5400/html-to-pdf
+npx playwright install chromium          # one-time Chromium download
+
+htp --html '<h1>Hi</h1>' --out hi.pdf
+htp --url https://example.com --landscape --out wide.pdf
+```
+
+Prefer no global install? `npx @saad5400/html-to-pdf --url https://example.com > out.pdf` works the same.
+
+### From source (server + worker)
 
 ```bash
 git clone https://github.com/Saad5400/html-to-pdf.git
 cd html-to-pdf
-npm install
-cp .env.example .env     # edit API_KEYS and SIGNED_URL_SECRET before leaving localhost
+npm install                              # installs deps + Chromium via Playwright
+cp .env.example .env                     # rotate API_KEYS and SIGNED_URL_SECRET before leaving localhost
 ```
 
-Then pick the mode that fits your use case:
+### Docker
+
+```bash
+docker compose up --build                # production-shaped API + worker + Redis
+```
+
+---
+
+## Quick start
+
+Pick the mode that fits your use case:
 
 ```bash
 # One-shot CLI — no server, no infra
-./bin/htp --html '<h1>Hi</h1>' --out hi.pdf
+htp --html '<h1>Hi</h1>' --out hi.pdf
 
 # Minimal HTTP — sync /v1/convert only, no Redis, no auth
 npm run minimal
@@ -49,7 +76,7 @@ curl -X POST http://localhost:3000/v1/convert \
   -d '{"html":"<h1>Hi</h1>"}' -o out.pdf
 
 # Full local stack — sync + async + storage + playground UI (needs Docker for Redis)
-make local                      # opens http://localhost:3000/playground
+make local                               # opens http://localhost:3000/playground
 
 # Docker compose — production-shaped full stack
 docker compose up --build
@@ -61,7 +88,7 @@ docker compose up --build
 
 | Mode | Command | Endpoints | Needs |
 |------|---------|-----------|-------|
-| **CLI** | `./bin/htp ...` | — | Node + Chromium |
+| **CLI** | `htp ...` (or `npx @saad5400/html-to-pdf ...`) | — | Node + Chromium |
 | **Minimal HTTP** | `npm run minimal` | `POST /v1/convert` only | Node + Chromium |
 | **Local full stack** | `make local` | `convert` + `jobs` + `files` + `playground` | + Docker (Redis) |
 | **Docker compose** | `docker compose up --build` | same as full stack, worker replicas | Docker |
@@ -78,21 +105,24 @@ The mode is selected by `MODE=full|minimal` in `.env`. Individual toggles (`ENAB
 
 ```bash
 # Piped HTML
-echo '<h1>Hi</h1>' | ./bin/htp --out hi.pdf
+echo '<h1>Hi</h1>' | htp --out hi.pdf
 
 # Render a URL in landscape
-./bin/htp --url https://example.com --landscape --out wide.pdf
+htp --url https://example.com --landscape --out wide.pdf
 
 # Read HTML from a file and add a header
-./bin/htp --html @report.html \
+htp --html @report.html \
   --header '<div style="font-size:9px">Report</div>' \
   --margin 20mm --out report.pdf
 
 # Emit metadata as JSON (no PDF on stdout)
-./bin/htp --url https://example.com --json --quiet
+htp --url https://example.com --json --quiet
+
+# Bypass install: one-shot via npx
+npx @saad5400/html-to-pdf --url https://example.com > out.pdf
 ```
 
-Run `./bin/htp --help` for the full flag list.
+See [CLI reference](#cli-reference) for every flag. `htp --help` prints the same.
 
 ### Synchronous HTTP render
 
@@ -140,6 +170,73 @@ content-type: application/json
 ```
 
 Signature covers `${t}.${rawBody}` with `WEBHOOK_SECRET`. Receivers **must** enforce a freshness window (±5 min suggested) and reject stale timestamps to prevent replay.
+
+---
+
+## CLI reference
+
+```
+htp [options]
+echo "<html>...</html>" | htp [options]
+```
+
+The CLI spawns its own Chromium (via the Playwright install), runs a single render, and exits. No Redis, no queue, no auth.
+
+### Source (exactly one)
+
+| Flag | Description |
+|---|---|
+| `--url <URL>` | Render a remote URL. Subject to SSRF checks. |
+| `--html <STRING\|@file>` | Render an inline HTML string, or `@path/to/file.html` to load from disk. |
+| *(stdin)* | If neither flag is passed and stdin is piped, the CLI reads HTML from stdin. |
+
+### Output
+
+| Flag | Default | Description |
+|---|---|---|
+| `--out <path>` | — | Write PDF to a file. If omitted, the raw PDF is written to stdout. |
+| `--json` | off | Print metadata JSON (`bytes`, `pages`, `durationMs`, `sha256`) instead of the PDF body. |
+| `--quiet` | off | Suppress `[htp] ...` progress messages on stderr. |
+| `-h`, `--help` | — | Print usage and exit. |
+
+### Page geometry
+
+| Flag | Default | Description |
+|---|---|---|
+| `--format <name>` | `A4` | Page size: `Letter`, `Legal`, `Tabloid`, `Ledger`, `A0`…`A6`. |
+| `--landscape` | off | Landscape orientation. |
+| `--margin <value>` | none | Applied to all four sides (e.g. `10mm`, `1in`, `20px`). For per-side margins, use the HTTP API. |
+| `--scale <0.1..2>` | `1` | CSS zoom applied before paginating. |
+| `--no-print-background` | on | Disable background graphics (colors, images). |
+| `--base-url <URL>` | — | Base URL for relative `href`/`src` inside `--html` input. |
+| `--emulate-media <screen\|print>` | `print` | CSS `@media` to emulate. |
+
+### Content & timing
+
+| Flag | Default | Description |
+|---|---|---|
+| `--wait-for <selector>` | — | Wait for a CSS selector to appear before rendering (sentinel for JS-rendered content). |
+| `--wait-ms <ms>` | — | Extra wait after navigation completes. Capped at 15000. |
+| `--header <html>` | — | Header template. Uses Chromium's `<span class="pageNumber">`, `"title"`, `"date"`, `"totalPages"` tokens. |
+| `--footer <html>` | — | Footer template (same tokens as `--header`). |
+| `--timeout-ms <ms>` | `30000` | Total render wall-clock budget. On expiry the page is force-closed and the CLI exits with code `3`. |
+
+### Network
+
+| Flag | Default | Description |
+|---|---|---|
+| `--allow-private` | off | Allow private / loopback / link-local target URLs. **Do not** pass this against untrusted input — it disables SSRF protection. |
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Fatal (unexpected crash) |
+| `2` | Bad arguments |
+| `3` | Render error (timeout, SSRF rejection, oversized output, etc.) |
+
+For the full render option surface (per-side margins, cookies, extra headers, resource blocking, custom CSS/JS, viewport, `pageRanges`, `preferCSSPageSize`, `colorScheme`, `waitUntil`), use [`POST /v1/convert`](#api-reference) or `POST /v1/jobs` — the CLI exposes the most common subset.
 
 ---
 
@@ -231,7 +328,21 @@ All options live under `options` in the request body. Full schema in `src/schema
 
 ## Configuration
 
-All knobs are environment variables, validated at boot via Zod. Full list: [`.env.example`](./.env.example).
+Settings live in two places depending on how you run the tool:
+
+- **Server / worker:** environment variables, validated at boot via Zod. Full list: [`.env.example`](./.env.example).
+- **CLI (`htp`):** command-line flags. See the [CLI reference](#cli-reference) for the full list — the CLI does not read `.env` except for two escape hatches, `--timeout-ms` (overrides `RENDER_TIMEOUT_MS`) and `--allow-private` (overrides `ALLOW_PRIVATE_NETWORKS`).
+
+### CLI flags at a glance
+
+| Concern | Flag(s) |
+|---|---|
+| Source | `--url`, `--html` (or stdin) |
+| Output | `--out`, `--json`, `--quiet` |
+| Page | `--format`, `--landscape`, `--margin`, `--scale`, `--no-print-background`, `--base-url`, `--emulate-media` |
+| Timing | `--wait-for`, `--wait-ms`, `--timeout-ms` |
+| Chrome | `--header`, `--footer` |
+| Network | `--allow-private` |
 
 ### Feature toggles
 
