@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>html-to-pdf playground</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root { color-scheme: light dark; --b: #d1d5db; --bg:#fff; --bg2:#f9fafb; --txt:#111827; --pri:#2563eb; --err:#b91c1c; }
+      @media (prefers-color-scheme: dark) {
+        :root { --b:#374151; --bg:#0b1220; --bg2:#111827; --txt:#e5e7eb; --pri:#60a5fa; --err:#f87171; }
+      }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family: ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--txt); }
+      header { padding:14px 20px; border-bottom:1px solid var(--b); display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+      header h1 { margin:0; font-size:16px; font-weight:600; }
+      header input, header button, header select { font:inherit; padding:6px 10px; background:var(--bg2); color:var(--txt); border:1px solid var(--b); border-radius:6px; }
+      header button { background:var(--pri); color:#fff; border-color:var(--pri); cursor:pointer; }
+      header button:disabled { opacity:.5; cursor:wait; }
+      .grid { display:grid; grid-template-columns: 1fr 1fr; gap:0; height:calc(100vh - 58px); }
+      .pane { display:flex; flex-direction:column; min-width:0; }
+      .pane + .pane { border-left:1px solid var(--b); }
+      .pane h2 { margin:0; padding:10px 16px; font-size:13px; font-weight:600; background:var(--bg2); border-bottom:1px solid var(--b); }
+      textarea { flex:1; resize:none; padding:14px; border:0; outline:none; font-family: ui-monospace, monospace; font-size:13px; background:var(--bg); color:var(--txt); white-space:pre; }
+      .preview { flex:1; background:#374151; }
+      iframe { width:100%; height:100%; border:0; background:#fff; }
+      .meta { padding:8px 14px; font-size:12px; background:var(--bg2); border-top:1px solid var(--b); display:flex; gap:18px; flex-wrap:wrap; }
+      .meta b { font-weight:600; }
+      .err { color:var(--err); font-family:ui-monospace,monospace; padding:14px; white-space:pre-wrap; }
+      details { border-top:1px solid var(--b); }
+      summary { padding:10px 16px; cursor:pointer; font-size:13px; font-weight:600; background:var(--bg2); }
+      .opts { padding:14px; display:grid; grid-template-columns:auto 1fr; gap:8px 12px; align-items:center; }
+      .opts label { font-size:12px; }
+      .opts input[type="text"], .opts select { width:100%; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>html-to-pdf playground</h1>
+      <label style="font-size:12px">API key
+        <input id="key" placeholder="dev-key-change-me" value="dev-key-change-me" />
+      </label>
+      <select id="format">
+        <option>A4</option><option>Letter</option><option>Legal</option><option>A3</option><option>A5</option>
+      </select>
+      <select id="orient">
+        <option value="false">Portrait</option>
+        <option value="true">Landscape</option>
+      </select>
+      <button id="render">Render PDF ⏎</button>
+      <span id="status" style="font-size:12px;opacity:.7"></span>
+    </header>
+    <div class="grid">
+      <section class="pane">
+        <h2>HTML input</h2>
+        <textarea id="html" spellcheck="false"></textarea>
+        <details>
+          <summary>Advanced options</summary>
+          <div class="opts">
+            <label>URL (instead of HTML)</label><input id="url" type="text" placeholder="https://example.com" />
+            <label>Margin (top/bottom)</label><input id="margin" type="text" placeholder="10mm" />
+            <label>Wait for selector</label><input id="waitsel" type="text" placeholder="#ready" />
+            <label>Print background</label>
+            <select id="printbg"><option value="true">true</option><option value="false">false</option></select>
+            <label>Header (template HTML)</label><input id="header" type="text" />
+            <label>Footer (template HTML)</label><input id="footer" type="text" />
+          </div>
+        </details>
+      </section>
+      <section class="pane">
+        <h2>PDF preview</h2>
+        <div class="preview"><iframe id="frame"></iframe></div>
+        <div class="meta" id="meta">Render to see metadata</div>
+      </section>
+    </div>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      $('html').value = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  body{font-family:system-ui;padding:48px;background:#fafafa}
+  h1{color:#2563eb}
+  .badge{background:#fef3c7;border-radius:4px;padding:2px 6px;font-size:.85em}
+</style></head>
+<body>
+  <h1>Hello from <span class="badge">html-to-pdf</span></h1>
+  <p>Edit me on the left, then press <strong>Render PDF</strong>.</p>
+</body></html>`;
+      let lastUrl;
+      async function render() {
+        const btn = $('render'); btn.disabled = true; $('status').textContent = 'Rendering...';
+        const t0 = performance.now();
+        const opts = {};
+        opts.format = $('format').value;
+        opts.landscape = $('orient').value === 'true';
+        opts.printBackground = $('printbg').value === 'true';
+        const m = $('margin').value.trim(); if (m) opts.margin = { top:m, bottom:m, left:m, right:m };
+        const ws = $('waitsel').value.trim(); if (ws) opts.waitForSelector = ws;
+        const h = $('header').value.trim(); const f = $('footer').value.trim();
+        if (h || f) { opts.displayHeaderFooter = true; if (h) opts.headerTemplate = h; if (f) opts.footerTemplate = f; }
+        const url = $('url').value.trim();
+        const body = url ? { url, options: opts } : { html: $('html').value, options: opts };
+        try {
+          const res = await fetch('/v1/convert', {
+            method:'POST',
+            headers:{ 'content-type':'application/json', 'x-api-key': $('key').value },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            $('frame').srcdoc = '<pre style="color:#b91c1c;padding:14px;font-family:ui-monospace">'+ text +'</pre>';
+            $('status').textContent = 'Error '+res.status;
+            $('meta').textContent = 'HTTP '+ res.status;
+            return;
+          }
+          const blob = await res.blob();
+          if (lastUrl) URL.revokeObjectURL(lastUrl);
+          lastUrl = URL.createObjectURL(blob);
+          $('frame').src = lastUrl;
+          const ms = Math.round(performance.now() - t0);
+          $('meta').innerHTML = `<span><b>Bytes:</b> ${blob.size.toLocaleString()}</span>` +
+            `<span><b>Pages:</b> ${res.headers.get('x-pdf-pages') ?? '?'}</span>` +
+            `<span><b>Server-ms:</b> ${res.headers.get('x-render-ms') ?? '?'}</span>` +
+            `<span><b>Total-ms:</b> ${ms}</span>` +
+            `<span><b>SHA-8:</b> ${(res.headers.get('x-pdf-sha256') ?? '').slice(0,8)}</span>`;
+          $('status').textContent = 'OK';
+        } catch (err) {
+          $('frame').srcdoc = '<pre style="color:#b91c1c;padding:14px;font-family:ui-monospace">'+ err.message +'</pre>';
+          $('status').textContent = 'Network error';
+        } finally { btn.disabled = false; }
+      }
+      $('render').onclick = render;
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') render();
+      });
+      // Auto-render on load
+      window.addEventListener('load', render);
+    </script>
+  </body>
+</html>

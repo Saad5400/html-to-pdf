@@ -1,0 +1,79 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # Hardening: Chromium needs a writable /tmp for its sandbox helpers but
+    # nothing else. cap-drop ALL means we get only what we explicitly add.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,size=256m
+      - /home/app/.cache:rw,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "dist/worker/index.js"]
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # Same hardening as the app — workers run user HTML so they're the more
+    # important boundary.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,size=512m
+      - /home/app/.cache:rw,size=128m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      replicas: 2
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis-data:/data
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    profiles: ["s3"]
+
+volumes:
+  redis-data:
+  minio-data:

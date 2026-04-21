@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.git
+.github
+.env*
+!.env.example
+test
+*.test.ts
+storage
+tmp
+README.md
