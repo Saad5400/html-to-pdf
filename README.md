@@ -2,6 +2,38 @@
 
 A production-grade service for converting **HTML strings** or **URLs** to **PDF**, built on Fastify, Playwright (Chromium), and BullMQ.
 
+## Quick start
+
+Requires Node.js ≥ 22 (see `.nvmrc`).
+
+```bash
+git clone https://github.com/Saad5400/html-to-pdf.git
+cd html-to-pdf
+npm install                 # also installs Chromium via Playwright
+cp .env.example .env        # edit API_KEYS / SIGNED_URL_SECRET for non-dev use
+```
+
+Pick one of the run modes:
+
+```bash
+# 1. One-shot CLI — no server, no infra
+./bin/htp --html '<h1>Hi</h1>' --out hi.pdf
+
+# 2. Minimal HTTP — sync /v1/convert only, no Redis, no auth
+npm run minimal
+curl -X POST http://localhost:3000/v1/convert \
+  -H 'content-type: application/json' \
+  -d '{"html":"<h1>Hi</h1>"}' -o out.pdf
+
+# 3. Local full stack — sync + async + storage + playground UI (needs Docker for Redis)
+make local                  # opens http://localhost:3000/playground
+
+# 4. Docker compose — full stack with workers, Redis, optional MinIO
+docker compose up --build
+```
+
+See [Run modes](#run-modes--pick-the-one-that-fits) for the full comparison and [API](#api) for endpoint details.
+
 ## Highlights
 
 - **High-fidelity rendering** — Chromium via Playwright handles modern CSS, web fonts, JavaScript, SVG, MathML.
