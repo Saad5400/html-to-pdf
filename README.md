@@ -1,5 +1,7 @@
 # html-to-pdf
 
+## ⚠️ FULLY VIBE CODDED ⚠️
+
 [![CI](https://github.com/Saad5400/html-to-pdf/actions/workflows/ci.yml/badge.svg)](https://github.com/Saad5400/html-to-pdf/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./.nvmrc)
