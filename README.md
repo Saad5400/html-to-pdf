@@ -1,104 +1,98 @@
 # html-to-pdf
 
-A production-grade service for converting **HTML strings** or **URLs** to **PDF**, built on Fastify, Playwright (Chromium), and BullMQ.
+[![CI](https://github.com/Saad5400/html-to-pdf/actions/workflows/ci.yml/badge.svg)](https://github.com/Saad5400/html-to-pdf/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./.nvmrc)
+
+Convert **HTML strings** or **URLs** to **PDF**. A hardened, Chromium-backed service with sync and async HTTP APIs, a one-shot CLI, pluggable storage, and first-class Docker support.
+
+Built on **Fastify 5**, **Playwright (Chromium)**, **BullMQ**, and strict TypeScript.
+
+- [Quick start](#quick-start)
+- [Run modes](#run-modes)
+- [Usage](#usage)
+- [API reference](#api-reference)
+- [Render options](#render-options)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Security](#security)
+- [Deployment](#deployment)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
 
 ## Quick start
 
-Requires Node.js ≥ 22 (see `.nvmrc`).
+Requires **Node.js ≥ 22** (see `.nvmrc`). `npm install` also downloads Chromium via Playwright.
 
 ```bash
 git clone https://github.com/Saad5400/html-to-pdf.git
 cd html-to-pdf
-npm install                 # also installs Chromium via Playwright
-cp .env.example .env        # edit API_KEYS / SIGNED_URL_SECRET for non-dev use
+npm install
+cp .env.example .env     # edit API_KEYS and SIGNED_URL_SECRET before leaving localhost
 ```
 
-Pick one of the run modes:
+Then pick the mode that fits your use case:
 
 ```bash
-# 1. One-shot CLI — no server, no infra
+# One-shot CLI — no server, no infra
 ./bin/htp --html '<h1>Hi</h1>' --out hi.pdf
 
-# 2. Minimal HTTP — sync /v1/convert only, no Redis, no auth
+# Minimal HTTP — sync /v1/convert only, no Redis, no auth
 npm run minimal
 curl -X POST http://localhost:3000/v1/convert \
   -H 'content-type: application/json' \
   -d '{"html":"<h1>Hi</h1>"}' -o out.pdf
 
-# 3. Local full stack — sync + async + storage + playground UI (needs Docker for Redis)
-make local                  # opens http://localhost:3000/playground
+# Full local stack — sync + async + storage + playground UI (needs Docker for Redis)
+make local                      # opens http://localhost:3000/playground
 
-# 4. Docker compose — full stack with workers, Redis, optional MinIO
+# Docker compose — production-shaped full stack
 docker compose up --build
 ```
 
-See [Run modes](#run-modes--pick-the-one-that-fits) for the full comparison and [API](#api) for endpoint details.
+---
 
-## Highlights
+## Run modes
 
-- **High-fidelity rendering** — Chromium via Playwright handles modern CSS, web fonts, JavaScript, SVG, MathML.
-- **Sync + async APIs** — `POST /v1/convert` returns a PDF inline; `POST /v1/jobs` returns a job ID for long renders, with optional webhook callback.
-- **Hardened by default** — SSRF guard with DNS-resolved private/loopback/link-local/multicast/CGNAT blocking, configurable allow/block hostlists, content/HTML/page size caps, helmet, rate limiting per API key.
-- **Pluggable storage** — local filesystem (HMAC-signed download URLs) or any S3-compatible bucket (presigned URLs). MinIO works out of the box.
-- **Operability** — Prometheus metrics at `/metrics`, structured JSON logs (pino) with auth header redaction, `/health/live` & `/health/ready` probes, OpenAPI 3 served at `/docs`, graceful SIGTERM shutdown.
-- **Efficient** — pooled, reused Chromium contexts with idle eviction; sha256-content-addressed storage deduplicates identical renders.
-- **Strict TypeScript** — `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`. Validated env config via Zod; validated request schemas via Zod + `fastify-type-provider-zod`.
-- **Tested** — Vitest unit + integration suites with ≥80% coverage threshold, separate Playwright-driven e2e suite.
+| Mode | Command | Endpoints | Needs |
+|------|---------|-----------|-------|
+| **CLI** | `./bin/htp ...` | — | Node + Chromium |
+| **Minimal HTTP** | `npm run minimal` | `POST /v1/convert` only | Node + Chromium |
+| **Local full stack** | `make local` | `convert` + `jobs` + `files` + `playground` | + Docker (Redis) |
+| **Docker compose** | `docker compose up --build` | same as full stack, worker replicas | Docker |
 
-## Run modes — pick the one that fits
+The mode is selected by `MODE=full|minimal` in `.env`. Individual toggles (`ENABLE_QUEUE`, `ENABLE_STORAGE`, `ENABLE_RATE_LIMIT`, `AUTH_REQUIRED`) override the mode-derived defaults.
 
-| Mode | Command | What you get | What you need |
-|------|---------|--------------|---------------|
-| **CLI (one-shot)** | `./bin/htp --html '<h1>Hi</h1>' --out hi.pdf` | Convert one document. No server. | Just Node + Chromium |
-| **Minimal HTTP** | `npm run minimal` | `POST /v1/convert` → PDF inline. No auth. | **No Redis. No storage.** |
-| **Local full stack** | `make local` | Sync + async + storage + playground UI. Opens browser. | Docker (for Redis) |
-| **Docker compose** | `docker compose up --build` | Full stack with worker replicas, Redis, optional MinIO. | Docker |
+`/health/live`, `/health/ready`, `/metrics`, `/docs`, and `/playground` are always public.
 
-### CLI examples
+---
+
+## Usage
+
+### CLI
 
 ```bash
+# Piped HTML
 echo '<h1>Hi</h1>' | ./bin/htp --out hi.pdf
+
+# Render a URL in landscape
 ./bin/htp --url https://example.com --landscape --out wide.pdf
-./bin/htp --html @report.html --header '<div style="font-size:9px">Header</div>' --margin 20mm --out report.pdf
-./bin/htp --url https://example.com --json --quiet         # metadata only
+
+# Read HTML from a file and add a header
+./bin/htp --html @report.html \
+  --header '<div style="font-size:9px">Report</div>' \
+  --margin 20mm --out report.pdf
+
+# Emit metadata as JSON (no PDF on stdout)
+./bin/htp --url https://example.com --json --quiet
 ```
 
-### Minimal-mode HTTP
+Run `./bin/htp --help` for the full flag list.
 
-Pure sync, no infrastructure. Boots in <2s on first request. Ideal for
-embedding in an app via internal HTTP, for CI, or for self-hosting on a
-single VM.
-
-```bash
-npm run minimal
-# → POST http://localhost:3000/v1/convert  (no auth, returns PDF inline)
-curl -X POST http://localhost:3000/v1/convert \
-  -H 'content-type: application/json' \
-  -d '{"html":"<h1>Hi</h1>"}' -o out.pdf
-```
-
-`/v1/jobs` and `/v1/files` are deliberately absent in this mode (404).
-Set `MODE=full` (or individual `ENABLE_QUEUE=true`/`ENABLE_STORAGE=true`)
-to opt into them.
-
-### Local full stack with playground UI
-
-```bash
-make local      # or: npm run local
-```
-
-This boots Redis (Docker), the API server, and a worker, then opens
-**http://localhost:3000/playground** — a live HTML editor with a side-by-side
-PDF preview. Edit the HTML, hit ⌘/Ctrl+Enter, see the PDF instantly.
-
-### Docker compose (production-shaped)
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-Convert HTML synchronously:
+### Synchronous HTTP render
 
 ```bash
 curl -sS -X POST http://localhost:3000/v1/convert \
@@ -108,146 +102,267 @@ curl -sS -X POST http://localhost:3000/v1/convert \
   -o out.pdf
 ```
 
-Convert a URL asynchronously and poll for completion:
+The response body is the raw `application/pdf`. Use this for documents that render in under a few seconds.
+
+### Asynchronous job
+
+For long renders, large documents, or webhook delivery:
 
 ```bash
 JOB=$(curl -sS -X POST http://localhost:3000/v1/jobs \
   -H 'x-api-key: dev-key-change-me' \
-  -H 'idempotency-key: my-unique-key-1' \
+  -H 'idempotency-key: invoice-2026-0142' \
   -H 'content-type: application/json' \
-  -d '{"url":"https://example.com"}' | jq -r .jobId)
+  -d '{
+        "url": "https://example.com",
+        "webhookUrl": "https://my.app/webhooks/pdf",
+        "metadata": {"tenant": "acme"}
+      }' | jq -r .jobId)
 
 curl -sS http://localhost:3000/v1/jobs/$JOB \
   -H 'x-api-key: dev-key-change-me' | jq
 ```
 
-## API
+On completion, the job response contains a signed `downloadUrl`; a webhook POST is fired if `webhookUrl` was supplied.
 
-OpenAPI is auto-generated and live at `http://localhost:3000/docs`.
+### Webhooks
 
-| Method | Path                     | Purpose |
-| ------ | ------------------------ | ------- |
-| POST   | `/v1/convert`            | Render PDF inline (sync) |
-| POST   | `/v1/jobs`               | Enqueue async render; supports `Idempotency-Key` and `webhookUrl` |
-| GET    | `/v1/jobs/:id`           | Job status + signed download URL on completion |
-| GET    | `/v1/files/:key`         | HMAC-signed local download (when `STORAGE_DRIVER=local`) |
-| GET    | `/health/live`           | Liveness |
-| GET    | `/health/ready`          | Readiness (Redis + browser pool) |
-| GET    | `/metrics`               | Prometheus exposition |
-| GET    | `/docs`                  | Swagger UI |
-| GET    | `/playground`            | Interactive HTML→PDF editor (dev convenience) |
+Delivered as a signed POST:
 
-### Convert request body
+```
+POST https://my.app/webhooks/pdf
+X-Signature: t=1713700000,v1=<hex-hmac-sha256>
+content-type: application/json
 
-See `src/schemas/convert.ts` for the full Zod schema. Key options:
+{ "jobId": "...", "status": "completed", "downloadUrl": "...", "metadata": {...} }
+```
+
+Signature covers `${t}.${rawBody}` with `WEBHOOK_SECRET`. Receivers **must** enforce a freshness window (±5 min suggested) and reject stale timestamps to prevent replay.
+
+---
+
+## API reference
+
+OpenAPI 3 is auto-generated and served live at `http://localhost:3000/docs` (Swagger UI). Emit a static spec with `make openapi`.
+
+| Method | Path              | Purpose |
+| ------ | ----------------- | ------- |
+| POST   | `/v1/convert`     | Render PDF inline (sync). |
+| POST   | `/v1/jobs`        | Enqueue async render. Supports `Idempotency-Key` header and `webhookUrl`. |
+| GET    | `/v1/jobs/:id`    | Poll job status; returns signed `downloadUrl` when `status=completed`. |
+| GET    | `/v1/files/:key`  | HMAC-signed download (local storage driver). |
+| GET    | `/health/live`    | Liveness probe. |
+| GET    | `/health/ready`   | Readiness — checks Redis + browser pool. |
+| GET    | `/metrics`        | Prometheus exposition. |
+| GET    | `/docs`           | Swagger UI. |
+| GET    | `/playground`     | Interactive HTML→PDF editor (dev convenience). |
+
+### Authentication
+
+Protected routes require an API key via either header:
+
+```
+Authorization: Bearer <key>
+x-api-key: <key>
+```
+
+Keys are listed in `API_KEYS` (comma-separated). Comparison is constant-time SHA-256-padded.
+
+---
+
+## Render options
+
+All options live under `options` in the request body. Full schema in `src/schemas/convert.ts`.
 
 ```jsonc
 {
-  "url":   "https://example.com",   // OR
-  "html":  "<h1>Hi</h1>",            // exactly one required
-  "baseUrl": "https://example.com/", // optional, used to resolve relative refs in `html`
+  // Exactly one source:
+  "url":     "https://example.com",
+  "html":    "<h1>Hi</h1>",
+  "baseUrl": "https://example.com/",  // resolve relative refs inside `html`
+
   "options": {
-    "format": "A4",                  // Letter|Legal|Tabloid|Ledger|A0..A6
-    "landscape": false,
-    "printBackground": true,
-    "scale": 1,
-    "margin": { "top": "10mm", "bottom": "10mm" },
+    // Page geometry
+    "format":     "A4",               // Letter|Legal|Tabloid|Ledger|A0..A6
+    "landscape":  false,
+    "scale":      1,
+    "margin":     { "top": "10mm", "bottom": "10mm" },
     "pageRanges": "1-3,5",
+    "preferCSSPageSize": false,
+
+    // Header/footer
     "displayHeaderFooter": false,
     "headerTemplate": "<div></div>",
     "footerTemplate": "<div style='font-size:8px'><span class='pageNumber'/></div>",
-    "preferCSSPageSize": false,
-    "waitUntil": "networkidle",      // load|domcontentloaded|networkidle|commit
-    "waitForSelector": "#ready",
+
+    // Content & timing
+    "printBackground":  true,
+    "waitUntil":        "networkidle",   // load|domcontentloaded|networkidle|commit
+    "waitForSelector":  "#ready",
     "waitForTimeoutMs": 1000,
-    "emulateMedia": "print",
-    "colorScheme": "light",
-    "viewport": { "width": 1280, "height": 1024, "deviceScaleFactor": 1 },
-    "blockResources": ["image", "media", "font"],
+    "emulateMedia":     "print",
+    "colorScheme":      "light",
+    "viewport":         { "width": 1280, "height": 1024, "deviceScaleFactor": 1 },
+
+    // Network & customization
+    "blockResources":   ["image", "media", "font"],
     "extraHttpHeaders": { "Authorization": "Bearer ..." },
-    "cookies": [{ "name": "session", "value": "...", "domain": ".example.com" }],
-    "customCss": "body { font-family: sans-serif; }",
-    "customScript": "document.title = 'rendered';"
+    "cookies":          [{ "name": "session", "value": "...", "domain": ".example.com" }],
+    "customCss":        "body { font-family: sans-serif; }",
+    "customScript":     "document.title = 'rendered';"
   },
-  "webhookUrl": "https://my.app/webhooks/pdf",
-  "metadata":   { "tenant": "acme" }
+
+  "webhookUrl": "https://my.app/webhooks/pdf",  // /v1/jobs only
+  "metadata":   { "tenant": "acme" }            // echoed back in responses/webhooks
 }
 ```
+
+### Notes on render fidelity
+
+- **Web fonts** (`@font-face`, Google Fonts `@import`) are awaited automatically — the renderer resolves `document.fonts.ready` after `networkidle`, so headings in remote faces always land correctly.
+- **JS-rendered content** (KaTeX, MathJax, CDN-loaded charts) requires an explicit signal. `networkidle` only tracks the network, not DOM mutation. Either:
+  - emit a sentinel element in your script's `onload` and pass `waitForSelector: '#ready'`, or
+  - pad with `waitForTimeoutMs: 500` (cheaper, less robust).
+- **Emoji, RTL (Arabic/Hebrew), CJK glyphs, SVG, complex flexbox/grid, multi-page tables with repeating headers, `@page` rules, headers/footers with page numbers** all work out of the box. See `scripts/visual-hard.ts` for the visual-regression battery.
+
+---
+
+## Configuration
+
+All knobs are environment variables, validated at boot via Zod. Full list: [`.env.example`](./.env.example).
+
+### Feature toggles
+
+| Variable | Default | Effect |
+|---|---|---|
+| `MODE` | `full` | `full` = everything. `minimal` = sync `/v1/convert`, no Redis/storage/auth. |
+| `ENABLE_QUEUE` | derived | Mounts `/v1/jobs/*`. Requires Redis. |
+| `ENABLE_STORAGE` | derived | Mounts `/v1/files/:key` and enables async downloads. |
+| `ENABLE_RATE_LIMIT` | derived | Per-key rate limiting (Redis-backed when available). |
+| `AUTH_REQUIRED` | `true` (`false` in minimal) | Enforces API-key checks on protected routes. |
+
+### Key settings
+
+| Variable | Purpose |
+|---|---|
+| `API_KEYS` | Comma-separated list of valid keys. Rotate before production. |
+| `SIGNED_URL_SECRET` | HMAC secret for local download URLs. Rejected at boot if default in `NODE_ENV=production`. |
+| `WEBHOOK_SECRET` | HMAC secret for webhook signatures. |
+| `STORAGE_DRIVER` | `local` \| `s3`. |
+| `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` | S3-compatible (MinIO works). |
+| `REDIS_URL`, `QUEUE_NAME`, `QUEUE_CONCURRENCY` | BullMQ. |
+| `BROWSER_POOL_SIZE`, `BROWSER_IDLE_TTL_MS` | Chromium pool sizing. |
+| `RENDER_TIMEOUT_MS`, `NAVIGATION_TIMEOUT_MS` | Render-time deadlines. |
+| `MAX_CONTENT_BYTES`, `MAX_HTML_BYTES`, `MAX_PAGES_PER_DOC` | Hard safety caps. |
+| `ALLOWED_URL_HOSTS`, `BLOCKED_URL_HOSTS`, `ALLOW_PRIVATE_NETWORKS` | SSRF allow/block. |
+| `RATE_LIMIT_PER_MIN`, `REQUEST_BODY_LIMIT_MB` | Request shaping. |
+| `TRUST_PROXY` | `true` \| `false` \| CSV of CIDRs. Never `true` unless ingress is authoritative for `X-Forwarded-For`. |
+
+---
 
 ## Architecture
 
 ```
-┌───────┐   POST /v1/convert      ┌───────────┐    pool    ┌──────────┐
-│client │ ─────────────────────►  │  Fastify  │ ─────────► │ Chromium │
-└───────┘                         │   API     │ ◄───────── │  pages   │
-   │                              └─────┬─────┘            └──────────┘
-   │ POST /v1/jobs                      │
-   ▼                                    ▼
-┌──────┐                             Redis (BullMQ)
-│queue │ ────────────────────────► ┌───────────┐
-└──────┘                           │  worker   │ ───► storage (local|S3)
-                                   └───────────┘
+┌────────┐  POST /v1/convert       ┌──────────┐   pool    ┌──────────┐
+│ client │ ──────────────────────► │  Fastify │ ────────► │ Chromium │
+└────────┘                         │   API    │ ◄──────── │  pages   │
+    │                              └────┬─────┘           └──────────┘
+    │ POST /v1/jobs                     │
+    ▼                                   ▼
+┌────────┐                          Redis (BullMQ)
+│ queue  │ ───────────────────────► ┌──────────┐
+└────────┘                          │  worker  │ ──► storage (local | S3)
+                                    └────┬─────┘
+                                         │ signed POST
+                                         ▼
+                                   user webhook
 ```
 
-- `src/services/pdf/browser-pool.ts` — fixed-capacity pool of `BrowserContext`s with idle TTL eviction; waiters queued FIFO.
+Key modules:
+
+- `src/services/pdf/browser-pool.ts` — fixed-capacity pool of Chromium `BrowserContext`s with idle TTL eviction and FIFO waiters.
 - `src/services/pdf/renderer.ts` — orchestrates SSRF check, navigation, resource blocking, content-size accounting, page count, and PDF emission.
-- `src/services/queue/index.ts` — BullMQ producer; `src/worker/index.ts` — consumer with content-addressed dedupe and webhook delivery.
-- `src/security/ssrf.ts` — DNS-resolves the URL host and rejects private/loopback/link-local/multicast/CGNAT IPs unless explicitly allowed.
+- `src/services/queue/index.ts` — BullMQ producer. `src/worker/index.ts` — consumer with content-addressed dedupe and webhook delivery.
+- `src/security/ssrf.ts` — DNS-resolves the URL host, rejects private / loopback / link-local / multicast / CGNAT IPs unless explicitly allowed. Applied to **every** request Chromium makes, not just top-level navigation.
 
-## Notes on rendering quality
-
-- **Web fonts** (`@font-face`, Google Fonts `@import`) are awaited automatically — the renderer calls `document.fonts.ready` after `networkidle` so headings styled with remote fonts always render in the intended face.
-- **JS-rendered content** (KaTeX, MathJax, charts that paint after a CDN script loads) needs an explicit signal. `networkidle` only knows about the network, not that an inline script has finished mutating the DOM. Either:
-  - Add a sentinel element to your script's `onload` and pass `waitForSelector: '#ready'`, or
-  - Pad with `waitForTimeoutMs: 500` (cheap, less robust).
-- **Emoji, RTL (Arabic/Hebrew), CJK glyphs, SVG, complex flexbox/grid, multi-page tables with repeating headers, `@page` rules, `displayHeaderFooter` with page numbers** all work out of the box (verified by the visual hard battery in `scripts/visual-hard.ts`).
-
-## Configuration
-
-All knobs are environment variables, validated at boot. See [`.env.example`](./.env.example).
-
-### Feature toggles
-
-| Var | Default | Effect |
-|-----|---------|--------|
-| `MODE` | `full` | `full` = all features. `minimal` = sync-only, no Redis, no storage, no auth. |
-| `ENABLE_QUEUE` | derived from MODE | Mounts `/v1/jobs/*`; requires Redis. |
-| `ENABLE_STORAGE` | derived from MODE | Mounts `/v1/files/:key` (local driver) or S3; required for async result downloads. |
-| `ENABLE_RATE_LIMIT` | derived from MODE | Per-key rate limiting (Redis backend if queue is on, in-memory otherwise). |
-| `AUTH_REQUIRED` | `true` (false in minimal) | API-key checks on protected routes. |
-
-`/health/*`, `/metrics`, `/docs`, `/playground` are always public; the convert and jobs endpoints honor `AUTH_REQUIRED`.
+---
 
 ## Security
 
-- All routes (except `/health/*`, `/metrics`, `/docs`, `/playground`) require an API key in `Authorization: Bearer <key>` or `x-api-key`.
-- API keys are compared with constant-time SHA-256-padded equality.
-- **SSRF defense in depth**: every URL — top-level navigation *and* every subresource Chromium tries to fetch — passes through `assertSafeUrl` and is then **pinned to the resolved IP** in `route.continue()` (with the original `Host` header preserved). This closes the DNS-rebind window between the API check and Chromium's independent re-resolution.
-- Non-`http(s)` schemes (`file:`, `javascript:`, `chrome:`, `view-source:`) are blocked at the same interceptor.
-- Direct private-network access is denied unless `ALLOW_PRIVATE_NETWORKS=true`.
-- **Render budget**: a wall-clock deadline races every awaited Playwright call (including `page.pdf`); on expiry the page is force-closed, surfacing as `RenderTimeoutError` (HTTP 504). An infinite-loop `customScript` cannot pin a worker.
-- Webhooks are signed `X-Signature: t=<ts>,v1=<hmac>` over `${ts}.${body}`. Receivers MUST enforce a freshness window (suggested ±5 min) to prevent replay.
-- Local storage download URLs are HMAC-signed with `SIGNED_URL_SECRET` and TTL-bounded; tampered signatures return 403.
-- Sensitive request headers (Authorization, x-api-key) are redacted from logs.
-- Browser runs with **Chromium site isolation enabled** (`IsolateOrigins,site-per-process` is no longer disabled). This is the renderer's primary defense against malicious HTML cross-origin reads.
-- Browser is launched with `--no-sandbox` (required inside containers without user namespaces). The provided `docker-compose.yml` compensates with **read-only root filesystem**, **cap_drop:ALL**, and **no-new-privileges**. For Kubernetes, mirror these with `securityContext: {readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}, allowPrivilegeEscalation: false, runAsNonRoot: true}` and add per-pod memory/CPU limits.
-- The default `SIGNED_URL_SECRET` is rejected at boot when `NODE_ENV=production`.
-- `TRUST_PROXY` accepts `true|false|<comma-separated CIDR list>` — never set `true` if your ingress isn't authoritative for `X-Forwarded-For`.
+- **API auth** on everything except `/health/*`, `/metrics`, `/docs`, `/playground`. Keys compared in constant time.
+- **SSRF defense in depth.** Every URL — top-level nav *and* every subresource Chromium tries to fetch — passes through `assertSafeUrl` and is then **pinned to the resolved IP** in `route.continue()` (Host header preserved). Closes the DNS-rebind window between the API check and Chromium's independent re-resolution.
+- **Scheme allowlist.** `file:`, `javascript:`, `chrome:`, `view-source:` blocked at the same interceptor.
+- **Private-network access** is denied unless `ALLOW_PRIVATE_NETWORKS=true`.
+- **Render budget.** A wall-clock deadline races every awaited Playwright call, including `page.pdf`; on expiry the page is force-closed, surfacing as `RenderTimeoutError` (HTTP 504). An infinite-loop `customScript` cannot pin a worker.
+- **Webhooks** are signed `X-Signature: t=<ts>,v1=<hmac>` over `${ts}.${body}`. Receivers must enforce a freshness window (±5 min).
+- **Signed local downloads.** HMAC-signed with `SIGNED_URL_SECRET`, TTL-bounded; tampered signatures return 403.
+- **Log redaction.** `Authorization` and `x-api-key` are redacted from structured logs.
+- **Site isolation.** Chromium runs with `IsolateOrigins,site-per-process` enabled — the renderer's primary defense against malicious cross-origin reads in user-supplied HTML.
+- **`--no-sandbox`** is required inside containers without user namespaces. `docker-compose.yml` compensates with read-only root filesystem, `cap_drop: ALL`, and `no-new-privileges`. For Kubernetes:
+  ```yaml
+  securityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    capabilities: { drop: [ALL] }
+  ```
+- **Production guard.** Boot fails when `NODE_ENV=production` and `SIGNED_URL_SECRET` is still the default.
+
+---
+
+## Deployment
+
+The provided `docker-compose.yml` is production-shaped: read-only root FS, dropped capabilities, separate API and worker services, Redis, optional MinIO.
+
+```bash
+cp .env.example .env
+# Rotate API_KEYS, SIGNED_URL_SECRET, WEBHOOK_SECRET.
+# Set NODE_ENV=production.
+docker compose up --build -d
+```
+
+Scale workers horizontally — each worker reuses a Chromium pool and pulls from the same BullMQ queue. For Kubernetes, deploy API and worker as separate Deployments sharing the Redis Service; mirror the compose securityContext; add HPA on queue depth or CPU.
+
+---
 
 ## Development
 
 ```bash
-make install         # npm ci + playwright install
-make local           # one-shot: redis + server + worker + playground
-make dev             # API only
-make worker          # worker only
-make test            # unit + integration (Vitest)
-make test-e2e        # real Chromium e2e tests
-make loadtest        # quick autocannon-style load test (assumes server up)
-make visual          # render the 8-sample visual battery to ./tmp/visual/
-make openapi         # emit openapi.yaml
+make install     # npm ci + playwright install
+make local       # redis + server + worker + playground in one shot
+make dev         # API only (watch mode)
+make worker      # worker only (watch mode)
+make test        # unit + integration (Vitest)
+make test-e2e    # real-Chromium e2e suite
+make loadtest    # quick autocannon-style load test (server must be up)
+make visual      # render the visual battery to ./tmp/visual/
+make openapi     # emit openapi.yaml
 ```
+
+Code quality:
+
+```bash
+npm run lint
+npm run lint:fix
+npm run typecheck
+npm run format
+```
+
+---
+
+## Contributing
+
+Bug reports and PRs welcome.
+
+1. File an issue using the **Bug report** or **Feature request** template.
+2. Fork, branch (`feat/...` or `fix/...`), commit.
+3. Run `npm run lint && npm run typecheck && npm test` before opening the PR.
+4. The PR template prompts for a description, test plan, and checklist.
+
+Dependabot keeps npm, GitHub Actions, and the Docker base image current.
+
+---
 
 ## License
 
-MIT
+[MIT](./LICENSE) © 2026 Saad5400
