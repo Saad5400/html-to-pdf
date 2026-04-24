@@ -80,7 +80,7 @@
     "fastify-type-provider-zod": "^4.0.2",
     "ioredis": "^5.4.1",
     "nanoid": "^5.0.7",
-    "pino": "^9.4.0",
+    "pino": "^10.3.1",
     "pino-pretty": "^11.2.2",
     "playwright": "^1.47.2",
     "prom-client": "^15.1.3",
