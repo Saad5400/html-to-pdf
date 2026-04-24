@@ -79,7 +79,7 @@
     "fastify": "^5.0.0",
     "fastify-type-provider-zod": "^4.0.2",
     "ioredis": "^5.4.1",
-    "nanoid": "^5.0.7",
+    "nanoid": "^5.1.9",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
     "playwright": "^1.47.2",
