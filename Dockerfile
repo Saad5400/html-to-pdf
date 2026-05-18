@@ -2,11 +2,12 @@
 
 # ---- Builder ----
 FROM node:26-bookworm-slim AS builder
+ENV NODE_ENV=development
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --no-fund --ignore-scripts
+    npm ci --include=dev --no-audit --no-fund --ignore-scripts
 
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
