@@ -9,7 +9,7 @@ npm-debug.log*
 .vscode
 .idea
 .claude/
-storage/
+/storage/
 tmp/
 openapi.yaml
 playwright-report/
