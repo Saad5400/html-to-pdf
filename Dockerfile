@@ -11,7 +11,7 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 
-RUN npx tsc -p tsconfig.build.json
+RUN npx tsc -p tsconfig.build.json && npx tsc-alias -p tsconfig.build.json
 
 # ---- Runtime ----
 FROM mcr.microsoft.com/playwright:v1.60.0-noble AS runtime
