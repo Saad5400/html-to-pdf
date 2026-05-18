@@ -452,6 +452,15 @@ make visual      # render the visual battery to ./tmp/visual/
 make openapi     # emit openapi.yaml
 ```
 
+### Visual fidelity tests
+
+`test/e2e/visual.e2e.test.ts` gates pixel-level drift between HTML and PDF. For each fixture in `test/fixtures/visual/`, it screenshots the HTML at A4 in Chromium, renders the same HTML through `PdfRenderer`, rasterizes the PDF via `pdfjs-dist` + `@napi-rs/canvas`, and pixel-diffs the two with `pixelmatch`. The suite fails any fixture below **≥ 98 %** similarity (worst measured: 0.9935). Fixtures cover headings, inline marks (bold/italic/underline/strike/code/sub/sup/highlight), nested lists, tables, blockquotes, callouts, code blocks, gradient banners, flex layouts, and Arabic RTL.
+
+```bash
+npm run visual:calibrate   # prints similarity across pixelmatch thresholds — use when changing the threshold
+npm run visual:dump        # writes ./tmp/visual-inspect/ with HTML, PDF, PNGs, and an index.html viewer
+```
+
 Code quality:
 
 ```bash
