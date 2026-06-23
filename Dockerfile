@@ -15,7 +15,7 @@ COPY src ./src
 RUN npx tsc -p tsconfig.build.json && npx tsc-alias -p tsconfig.build.json
 
 # ---- Runtime ----
-FROM mcr.microsoft.com/playwright:v1.60.0-noble AS runtime
+FROM mcr.microsoft.com/playwright:v1.61.1-noble AS runtime
 ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     NODE_OPTIONS="--enable-source-maps"
