@@ -76,7 +76,7 @@
     "@fastify/sensible": "^6.0.1",
     "@fastify/swagger": "^9.2.0",
     "@fastify/swagger-ui": "^5.2.6",
-    "argon2": "^0.44.0",
+    "argon2": "^0.45.1",
     "bullmq": "^5.76.8",
     "fastify": "^5.8.5",
     "fastify-type-provider-zod": "^6.1.0",
